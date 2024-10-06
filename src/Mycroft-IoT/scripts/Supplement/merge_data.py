@@ -22,7 +22,7 @@ def is_overlapping(x):
         return True
     return False
 
-dir = "/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/private_data_sharing_new/IoT-data/IoT-CVS/CTU-IoT-Malware-Capture-34-1/"
+dir = "/IoT-data/IoT-CVS/CTU-IoT-Malware-Capture-34-1/"
 fn_extracted = dir+"2018-12-21-15-50-14-192.168.1.195.csv"
 fn_labeled_flow = dir+"label.csv"
 

@@ -8,8 +8,8 @@ This file convert the log of the flows into csv format
 TODO: Please specify the log_fn and save_fn
 """
 
-log_fn = "/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/IoT-data/IoT-23-Dataset/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled"
-save_fn = "/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/IoT-data/IoT-23-Dataset/CTU-IoT-Malware-Capture-34-1/label.csv"
+log_fn = "/IoT-data/IoT-23-Dataset/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled"
+save_fn = "/IoT-data/IoT-23-Dataset/CTU-IoT-Malware-Capture-34-1/label.csv"
 
 ############################################
 file_ = open(log_fn, 'r')

@@ -12,8 +12,8 @@ import os
 This file helps to convert the raw pcap files into csv of the flows in the pcaps.
 TODO: specify the pcap_folder containing the pcaps that needs to  be processed and the csv_folder where the extracted flows need to be stored in
 """
-pcap_folder = "/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/private_data_sharing_new/IoT-data/IoT-23-Dataset"
-csv_folder = "/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/private_data_sharing_new/IoT-data/IoT-CVS/"
+pcap_folder = "/IoT-data/IoT-23-Dataset"
+csv_folder = "/IoT-data/IoT-CVS/"
 
 for folder_sub in glob.glob(pcap_folder+"/*/"):
     
