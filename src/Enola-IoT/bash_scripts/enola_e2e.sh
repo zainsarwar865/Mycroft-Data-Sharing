@@ -1,8 +1,8 @@
 #!/bin/bash
 
-dat_path=/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/IOT-data/IoT-CVS/
-code_dir=/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-rewrite-code/src/Enola/scripts
-results_path=/Users/tranhongvan/Desktop/Github-Projects/Private-Data-Sharing-new/results/
+dat_path=/IOT-data/IoT-CVS/
+code_dir=../scripts
+results_path=./results/
 # echo $dat_path
 ########    setting up  ###############
 SET_UP_DATA=false # split into benign and attack data and create train, validation and test set
