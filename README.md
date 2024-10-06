@@ -2,7 +2,7 @@
 
 #### Mycroft is a data sharing protocol which uses gradient and feature similarity based techniques to establish the utility of a dataset for a particular model in terms of external data augmentation
 
-
+## For vision datasets
 ### Dataset processing scripts
 The code for processing the datasets we use in the paper can be found under : 
 `src/Enola/scripts/utils/processing_datasets/`
@@ -34,4 +34,4 @@ The entire pipeline for Mycroft follows the following format which is also provi
 9 - Evaluating the new model
 
 
-
+## For Tabular dataset
