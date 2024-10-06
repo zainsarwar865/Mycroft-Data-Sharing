@@ -39,9 +39,9 @@ The entire pipeline for Mycroft follows the following format which is also provi
 ### Processing raw network data
 If the network data from MT and DO is in raw format, it must be processed into a tabular format. To achieve this, you can use the helper functions available in the src/Mycroft-IoT/scripts/Supplement folder:
 
-nfstream_helper.py - Converts pcap files into tabular flow statistics.
-read_log.py - Reads and processes label files.
-merge_data.py - Labels the flows using the processed labels and flow statistics, based on source/destination IP addresses, flow timing, etc., resulting in a CSV file with tabular features and labels.
+`nfstream_helper.py` - Converts pcap files into tabular flow statistics.
+`read_log.py` - Reads and processes label files.
+`merge_data.py` - Labels the flows using the processed labels and flow statistics, based on source/destination IP addresses, flow timing, etc., resulting in a CSV file with tabular features and labels.
 
 ### Creating Synthetic DO and MT
 The dataset includes multiple data captures, each containing both benign and attack traffic. To simulate realistic scenarios, the data is split and recombined to create synthetic DOs and MTs:
@@ -57,4 +57,4 @@ Due to differing data distributions between DO and MT, adjust distance metrics t
 ### Evaluate the samples that is shared 
 MT evaluates the samples shared by DO to determine which DO provides the most useful data.
 
-For more details about how to control each process, please refer to src/Mycroft-IoT/bash_scripts/mycroft_e2e.sh
+For more details about how to control each process, please refer to `/src/Mycroft-IoT/bash_scripts/mycroft_e2e.sh`
