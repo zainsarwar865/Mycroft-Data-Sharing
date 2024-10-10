@@ -54,7 +54,7 @@ Due to differing data distributions between DO and MT, adjust distance metrics t
 1 - Calculate the binning distance between Dhard and the DO samples.
 2 - Select samples that are likely useful for MT. DO can choose to diversify these samples rather than merely sharing those that are the closest distance to Dhard
 
-### Evaluate the samples that is shared 
+### Evaluate the samples that are shared 
 MT evaluates the samples shared by DO to determine which DO provides the most useful data.
 
 For more details about how to control each process, please refer to `/src/Mycroft-IoT/bash_scripts/mycroft_e2e.sh`
