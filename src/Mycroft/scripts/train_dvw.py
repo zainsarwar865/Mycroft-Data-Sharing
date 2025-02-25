@@ -50,10 +50,13 @@ parser.add_argument('--test_per_class', type=str)
 parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--augmented_dataset', type=str)
+parser.add_argument('--num_candidates', type=int)
+parser.add_argument('--per_class_budget', type=int)
 parser.add_argument('--augmented_config', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--finetune', type=str)
-
+parser.add_argument('--replay', type=str, default='True')
+parser.add_argument('--thrash_rate', type=float)
 
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
@@ -81,9 +84,9 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision.models as models
-from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights, resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights
 import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import Subset
 from utils.dataset import CustomImageDataset
 import torchvision.transforms as transforms
@@ -92,7 +95,9 @@ from sklearn.metrics import f1_score
 import logging
 from utils.configs import dataset_root_paths, dataset_configs
 from collections import Counter
+from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
+from utils import configs
 from utils import utils
 
 
@@ -150,6 +155,13 @@ else:
     args.finetune = False
 
 
+if args.replay == "True":
+    args.replay = True
+else:
+    args.replay = False
+
+
+
 # assertions to avoid divide by 0 issue in learning rate
 assert args.epochs>args.lr_warmup_epochs, "Total epochs must be more than warmup epochs"
 
@@ -165,7 +177,9 @@ mt_root_directory = os.path.join(args.enola_base_dir, mt_config)
 # Check trainer type
 if args.trainer_type == "MT_Baseline":
     expr_config = args.mt_hash_config 
-    
+    mt_hash_config = (hashlib.md5(args.mt_hash_config.encode('UTF-8'))).hexdigest()
+    args.mt_hash_config = mt_hash_config
+
 elif args.trainer_type == "MT_Augmented":
     expr_config = f"{args.mt_hash_config}_{args.do_hash_config}_{args.do_augmented_construct_hash_config}_{args.do_augmented_hash_config}"
     ### Convert strings to hashes
@@ -180,6 +194,11 @@ elif args.trainer_type == "MT_Augmented":
     do_augmented_construct_hash_config = (hashlib.md5(args.do_augmented_construct_hash_config.encode('UTF-8')))
     do_augmented_construct_hash_config =  do_augmented_construct_hash_config.hexdigest()
     args.do_augmented_construct_hash_config = do_augmented_construct_hash_config
+
+    mt_hash_config = (hashlib.md5(args.mt_hash_config.encode('UTF-8')))
+    mt_hash_config =  mt_hash_config.hexdigest()
+    args.mt_hash_config = mt_hash_config
+
     ###
 elif args.trainer_type == "DO": 
     do_hash_config = (hashlib.md5(args.do_hash_config.encode('UTF-8')))
@@ -216,13 +235,14 @@ if args.external_augmentation:
 
 
 # Finetuning a model
-if args.finetune and args.trainer_type == 'MT_Augmented':
+if args.trainer_type == 'MT_Augmented':
     # MT's baseline hash for finetuning
     mt_baseline_hash_config = args.mt_hash_ft_resume_config
     mt_baseline_hash_config = (hashlib.md5(mt_baseline_hash_config.encode('UTF-8'))).hexdigest()
     args.mt_hash_ft_resume_config = mt_baseline_hash_config 
     mt_baseline_hash_config = "MT_Baseline_" + mt_baseline_hash_config  
 
+# if args.finetune and args.trainer_type == 'MT_Augmented':
     # Read MT's baseline checkpoint path
     mt_baseline_path = os.path.join(mt_root_directory, mt_baseline_hash_config)
     ckpt_config = "Checkpoints/model_best.pth.tar"
@@ -246,7 +266,11 @@ logger = logging.getLogger()
 # Setting the threshold of logger to DEBUG
 logger.setLevel(logging.INFO)
 
-
+# Initialize class wise dicts
+class_stats = {}
+class_predictions = {}
+class_per_label_predictions = {}
+class_masks = {}
 
 # Create and save YAML file
 expr_config_dict = {}
@@ -309,18 +333,16 @@ def main_worker(gpu, ngpus_per_node, args):
     df_original_train = pd.read_pickle(retrieved_path)
     train_classes = df_original_train['label'].unique()
     args.num_classes = len(train_classes)
+
+
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")
         if args.arch == 'resnet50':
             model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
-        elif args.arch == 'efficientnet_b3':
-            model = models.__dict__[args.arch](weights=EfficientNet_B3_Weights.DEFAULT)
         if args.new_classifier:
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
-            elif args.arch == 'efficientnet_b3':
-                model.classifier[1] = nn.Linear(in_features=1536, out_features=args.num_classes, bias=True)
     
     else:
         logger.critical(f"=> creating model {args.arch}")
@@ -329,27 +351,8 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.new_classifier:
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
-            elif args.arch == 'efficientnet_b3':
-                model.classifier[1] = nn.Linear(in_features=1536, out_features=args.num_classes, bias=True)
 
-    # EMA
-    model_without_ddp = model
-    model_ema = None
-    if args.model_ema:
-        # Decay adjustment that aims to keep the decay independent of other hyper-parameters originally proposed at:
-        # https://github.com/facebookresearch/pycls/blob/f8cd9627/pycls/core/net.py#L123
-        #
-        # total_ema_updates = (Dataset_size / n_GPUs) * epochs / (batch_size_per_gpu * EMA_steps)
-        # We consider constant = Dataset_size for a given dataset/setup and omit it. Thus:
-        # adjust = 1 / total_ema_updates ~= n_GPUs * batch_size_per_gpu * EMA_steps / epochs
-        adjust = args.world_size * args.batch_size * args.model_ema_steps / args.epochs
-        alpha = 1.0 - args.model_ema_decay
-        alpha = min(1.0, alpha * adjust)
-        model_ema = utils.ExponentialMovingAverage(model_without_ddp, device=device, decay=1.0 - alpha)
-    
-    
-    
-    
+
     
     # Add option to freeze/unfreeze more layers
     # TODO
@@ -359,9 +362,6 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.arch == 'resnet50':
             model.fc.weight.requires_grad = True
             model.fc.bias.requires_grad = True
-        elif args.arch == 'efficientnet_b3':    
-            model.classifier[1].weight.requires_grad = True
-            model.classifier[1].bias.requires_grad = True
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         logger.critical('using CPU, this will be slow')
@@ -408,34 +408,8 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         device = torch.device("cpu")
     # define loss function (criterion), optimizer, and learning rate scheduler
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing).to(device)
 
-
-    """ 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-    
-   
-    optimizer = torch.optim.Adam(model.parameters(), args.lr,
-                            betas=(0.9, 0.999), eps=1e-08,
-                            weight_decay=args.weight_decay)
-    """
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    """
-    main_scheduler = CosineAnnealingLR(
-            optimizer, T_max=args.epochs - args.lr_warmup_epochs, eta_min=args.lr_min
-        )
-    
-    warmup_lr_scheduler = LinearLR(
-                optimizer, start_factor=args.lr_warmup_decay, total_iters=args.lr_warmup_epochs
-            )
-    
-    scheduler = SequentialLR(
-                optimizer, schedulers=[warmup_lr_scheduler, main_scheduler], milestones=[args.lr_warmup_epochs])
-
-
-    """
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
@@ -468,7 +442,7 @@ def main_worker(gpu, ngpus_per_node, args):
             logger.critical(f"=> no checkpoint found at '{args.resume}'")
     
 
-    elif args.finetune:
+    elif args.finetune or args.trainer_type == "MT_Augmented": 
         if os.path.isfile(mt_baseline_ckpt_path):
             print("=> loading checkpoint '{}'".format(mt_baseline_ckpt_path))
             if args.gpu is None:
@@ -493,6 +467,17 @@ def main_worker(gpu, ngpus_per_node, args):
     original_train_path = os.path.join(original_dataset_path, original_train_config)
     df_original_train = pd.read_pickle(original_train_path)
 
+    # Thrash top-10 classes
+    if args.original_dataset == 'food101':
+        thrash_classes = ['Macarons','Spaghetti bolognese','Mussels','Pho','Spaghetti carbonara','Cannoli','Hot and sour soup','Oysters','Deviled eggs','Edamame']
+    elif args.original_dataset == 'Imagenet':
+        thrash_classes = ['Welsh springer spaniel','Bedlington terrier','Pomeranian','pug, pug-dog','African hunting dog, hyena dog, Cape hunting dog, Lycaon pictus','Bernese mountain dog','Boston bull, Boston terrier','Leonberg','Samoyed, Samoyede','borzoi, Russian wolfhound']
+    elif args.original_dataset == "DogsVsWolves":
+        thrash_classes = ['dogs', 'wolves']
+
+
+    # df_original_train = df_og
+
     # Val needs to be the val_test.pkl set if training MT    
     if args.trainer_type != "DO":    
         original_val_config = dataset_configs[args.original_dataset]['val'][args.original_config]
@@ -500,6 +485,8 @@ def main_worker(gpu, ngpus_per_node, args):
         original_val_dataset_path = os.path.join(mt_root_directory, "Datasets")
         original_val_path = os.path.join(original_val_dataset_path, original_val_config)
         df_original_val = pd.read_pickle(original_val_path)
+        original_test_path = original_val_path.replace("_test", "_val")
+        df_original_test = pd.read_pickle(original_test_path)
     else:
         original_dataset_path = dataset_root_paths[args.original_dataset]
         original_val_config = dataset_configs[args.original_dataset]['val'][args.original_config]
@@ -507,7 +494,7 @@ def main_worker(gpu, ngpus_per_node, args):
         df_original_val = pd.read_pickle(original_val_path)
 
     # Augmented directory
-    if args.external_augmentation:        
+    if args.external_augmentation:
         df_augmented_train = pd.read_pickle(augmented_df_path)
         frames = [df_original_train, df_augmented_train]    
         df_train = pd.concat(frames)
@@ -518,7 +505,24 @@ def main_worker(gpu, ngpus_per_node, args):
     random_seed=args.seed
     # Shuffle the datasets
     df_train = df_train.sample(frac=1, random_state=random_seed)
-    df_test = df_val
+    #df_test = df_val
+    df_test = df_original_test
+    df_thrash_test = df_test[df_test['class'].isin(thrash_classes)]
+    df_thrash_val = df_val[df_val['class'].isin(thrash_classes)]
+    if args.trainer_type == "MT_Augmented":
+        # Load D_Hard
+        mt_baseline_resume_hash_config = args.mt_hash_ft_resume_config 
+        datasets_folder = "Datasets"
+        datasets_dir = os.path.join(mt_root_directory, datasets_folder)
+        val_config = configs.dataset_configs[args.original_dataset]['val'][args.original_config]
+        new_config = f"_test_empirical_{mt_baseline_resume_hash_config}.pkl"
+        dhard_config = val_config.replace(".pkl", new_config)
+        dhard_path = os.path.join(datasets_dir, dhard_config)
+        df_dhard = pd.read_pickle(dhard_path)
+        new_config = f"_test_sub_empirical_{mt_baseline_resume_hash_config}.pkl"
+        dhard_config = val_config.replace(".pkl", new_config)
+        dhard_path = os.path.join(datasets_dir, dhard_config)
+        df_dhard_sub = pd.read_pickle(dhard_path)
 
     # GO-GO-GO!
     # These are imagenet normalizations
@@ -529,48 +533,64 @@ def main_worker(gpu, ngpus_per_node, args):
 
         train_dataset = CustomImageDataset(df_train, transform=transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
+                transforms.Resize((224, 224)),
+                # transforms.RandomHorizontalFlip(),
+                transforms.Resize(224),
                 transforms.ToTensor(),
                 normalize,
             ]))
         
         val_dataset = CustomImageDataset(df_val, transform=transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.RandomResizedCrop(224),
+                transforms.Resize((224, 224)),
+                # transforms.Resize(224),
                 transforms.ToTensor(),
                 normalize,
             ]))
         test_dataset = CustomImageDataset(df_test, transform=transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.RandomResizedCrop(224),
+                transforms.Resize((224, 224)),
+                # transforms.Resize(224),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+        thrash_test_dataset = CustomImageDataset(df_thrash_test, transform=transforms.Compose([
+                transforms.ToPILImage(),
+                #transforms.Resize(224),
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+        thrash_val_dataset = CustomImageDataset(df_thrash_val, transform=transforms.Compose([
+                transforms.ToPILImage(),
+                #transforms.Resize(224),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 normalize,
             ]))
 
-    elif args.arch == 'efficientnet_b3':    
-        train_dataset = CustomImageDataset(df_train, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
-        val_dataset = CustomImageDataset(df_val, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
+        if args.trainer_type == "MT_Augmented":
 
-        test_dataset = CustomImageDataset(df_test, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
+            df_dhard_dataset = CustomImageDataset(df_dhard, transform=transforms.Compose([
+                    transforms.ToPILImage(),
+                    # transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
+                    # transforms.CenterCrop(300),
+                    transforms.Resize((224, 224)),
+                    # transforms.Resize(224),
+                    transforms.ToTensor(),
+                    normalize,
+                ]))
+
+            df_dhard_sub_dataset = CustomImageDataset(df_dhard_sub, transform=transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.Resize((224, 224)),
+                    #transforms.Resize(224),
+                    # transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
+                    # transforms.CenterCrop(300),
+                    transforms.ToTensor(),
+                    normalize,
+                ]))
+
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -608,9 +628,84 @@ def main_worker(gpu, ngpus_per_node, args):
         test_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True, sampler=val_sampler)
 
-    if args.evaluate:
-        validate(val_loader, model, criterion, args)
-        return
+    thrash_test_loader = torch.utils.data.DataLoader(
+        thrash_test_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+    
+    thrash_val_loader = torch.utils.data.DataLoader(
+        thrash_val_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+
+    if args.trainer_type == "MT_Augmented":
+            df_dhard_loader = torch.utils.data.DataLoader(
+            df_dhard_dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+
+            df_dhard_sub_loader = torch.utils.data.DataLoader(
+            df_dhard_sub_dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+
+
+    # Do per-class analysis during training
+    logger.critical("=====================================================================================================================================")
+    if args.trainer_type == "MT_Baseline":
+        logger.critical("Pre training stats")
+        #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+        class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_thrash_val, thrash_val_loader, model, criterion, args)
+        key = f"pre_training_val"
+        class_stats[key] = class_stats_epoch
+        class_predictions[key] = class_predictions_epoch
+        class_per_label_predictions[key] = class_per_label_predictions_epoch
+        class_masks[key] = class_masks_epoch
+        logger.critical("=====================================================================================================================================")
+
+    elif args.trainer_type == "MT_Augmented":
+
+
+        # Do per-class analysis during training
+        logger.critical("=====================================================================================================================================")
+        logger.critical("Pre training stats df_dhard")
+        #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+        class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard, df_dhard_loader, model, criterion, args)
+        key = f"pre_training_dhard"
+        class_stats[key] = class_stats_epoch
+        class_predictions[key] = class_predictions_epoch
+        class_per_label_predictions[key] = class_per_label_predictions_epoch
+        class_masks[key] = class_masks_epoch
+        logger.critical("=====================================================================================================================================")
+
+        # Do per-class analysis during training
+        logger.critical("=====================================================================================================================================")
+        logger.critical("Pre training stats df_dhard_sub")
+        #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+        class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard_sub, df_dhard_sub_loader, model, criterion, args)
+        key = f"pre_training_dhard_sub"
+        class_stats[key] = class_stats_epoch
+        class_predictions[key] = class_predictions_epoch
+        class_per_label_predictions[key] = class_per_label_predictions_epoch
+        class_masks[key] = class_masks_epoch
+        logger.critical("=====================================================================================================================================")
+
+
+        # Reset model
+        if not args.finetune:
+                if args.arch == 'resnet50':
+                    model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
+                if args.new_classifier:
+                    if args.arch == 'resnet50':
+                        model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
+
+                if args.gpu is not None and torch.cuda.is_available():
+                    #torch.cuda.set_device(args.gpu)
+                    model = model.cuda(device_id)
+
+                optimizer = torch.optim.SGD(model.parameters(), args.lr,
+                                            momentum=args.momentum,
+                                            weight_decay=args.weight_decay)
+
+                scheduler = StepLR(optimizer, step_size=30, gamma=0.1) 
+
+
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -619,8 +714,50 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model, criterion, optimizer, epoch, device, args)
         if(((epoch + 1) % args.num_eval_epochs) == 0):
         # evaluate on validation set
-            acc1 = validate(val_loader, model, criterion, args)
+            # acc1 = validate(test_loader, model, criterion, args)
+            if args.trainer_type == "MT_Baseline":
+                # Do per-class analysis during training
+                logger.critical("=====================================================================================================================================")
+                logger.critical("Val stats")
+            
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_thrash_val, thrash_val_loader, model, criterion, args)
+                key = f"{epoch}_val"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
+
+            elif args.trainer_type == "MT_Augmented":
+                # Do per-class analysis during training
+                logger.critical("=====================================================================================================================================")
+                logger.critical("Dhard stats")
+
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard, df_dhard_loader, model, criterion, args)
+                key = f"{epoch}_dhard"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
+
+                # Do per-class analysis during training
+                logger.critical("=====================================================================================================================================")
+                logger.critical("Dhard_sub stats")
+                
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard_sub, df_dhard_sub_loader, model, criterion, args)
+                key = f"{epoch}_dhard_sub"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
+
+
+
             scheduler.step()
+            all_accs = list(class_stats_epoch.values())
+            acc1 = sum(all_accs) / len(all_accs)
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
@@ -632,11 +769,13 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()}, epoch, is_best)
 
+
+
+
     # Test after training
     # Loading the best checkppint
     best_ckpt_name = "model_best.pth.tar"
     best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-    #best_ckpt_path = "/bigstor/zsarwar/spurious_classifiers/checkpoints/MT_2_10-classes_8_imagenet-1-wolf-dogs_2804a635b3f8c7cf0d43da52c2977b1c/model_best.pth.tar"
     logger.critical(best_ckpt_path)
     logger.critical("Testing after training")
     if args.gpu is None:
@@ -656,64 +795,69 @@ def main_worker(gpu, ngpus_per_node, args):
     #optimizer.load_state_dict(checkpoint['optimizer'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    
-    validate(test_loader, model, criterion, args)
+
+    logger.critical("Final validation on benign...")
+    validate(val_loader, model, criterion, args)
 
     ###################################################################################################
     # Code for per-class evaluation 
     logger.critical("Starting per class analysis...")
-    if args.test_per_class:        
-        
-        class_stats = {}
-        class_predictions = {}
-        class_per_label_predictions = {}
-        class_masks = {}
+    
+    if args.test_per_class:   
+            logger.critical("Testing adversarial dataset")
+            class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_test, test_loader, model, criterion, args)
+            class_stats['best'] = class_stats_epoch
+            class_predictions['best'] = class_predictions_epoch
+            class_per_label_predictions['best'] = class_per_label_predictions_epoch
+            class_masks['best'] = class_masks_epoch
+            
+            if args.trainer_type == "MT_Baseline":
+                logger.critical("=====================================================================================================================================")
+                logger.critical("VAL_STATS_BEST")
+                #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_thrash_test, thrash_test_loader, model, criterion, args)
+                key = f"val_best"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
+            elif args.trainer_type == "MT_Augmented":
+                logger.critical("=====================================================================================================================================")
+                logger.critical("DHARD_BEST")
+                #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard, df_dhard_loader, model, criterion, args)
+                key = f"dhard_best"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
 
-        unique_classes = df_val['label'].unique()
+                logger.critical("=====================================================================================================================================")
+                logger.critical("DHARD_SUB_BEST")
+                #top_1_acc, label_preds, prediction_mask, predicted_labels = get_sample_stats(df_thrash_val, thrash_val_loader, model, criterion, args)
+                class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch = get_sample_stats_classwise(df_dhard_sub, df_dhard_sub_loader, model, criterion, args)
+                key = f"dhard_sub_best"
+                class_stats[key] = class_stats_epoch
+                class_predictions[key] = class_predictions_epoch
+                class_per_label_predictions[key] = class_per_label_predictions_epoch
+                class_masks[key] = class_masks_epoch
+                logger.critical("=====================================================================================================================================")
 
-        for uni_class in unique_classes:
-            df_class_val = df_val[df_val['label'] == uni_class]
-            # GO-GO-GO!
-            normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                        std=[0.229, 0.224, 0.225])
-
-            if args.arch == 'resnet50':
-                val_dataset = CustomImageDataset(df_class_val, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.RandomResizedCrop(224),
-                transforms.ToTensor(),
-                normalize,
-            ]))
                 
-            elif args.arch == 'efficientnet_b3':
-                val_dataset = CustomImageDataset(df_class_val, transform=transforms.Compose([
-                        transforms.ToPILImage(),
-                        transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                        transforms.CenterCrop(300),
-                        transforms.ToTensor(),
-                        normalize,
-                    ]))            
-            val_sampler = None
-            val_loader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=True, sampler=val_sampler)
 
-            top_1_acc, label_preds, prediction_mask, predicted_labels = validate_per_class(val_loader, model, criterion, args)
-            class_per_label_predictions[uni_class] = predicted_labels
-            class_stats[uni_class] = top_1_acc
-            class_predictions[uni_class] = label_preds
-            class_masks[uni_class] = prediction_mask
+    agg_class_stats = {}
+    agg_class_stats['accuracy'] = class_stats
+    agg_class_stats['predictions'] = class_predictions
+    agg_class_stats['prediction_masks'] = class_masks  
+    agg_class_stats['predicted_labels'] = class_per_label_predictions       
+    # Save class_stats
+    agg_class_stats_out_path = os.path.join(metrics_dir, "agg_class_stats.pkl")
+    with open(agg_class_stats_out_path, 'wb') as o_file:
+        pickle.dump(agg_class_stats, o_file)
+    ##################################################################################################
 
-        agg_class_stats = {}
-        agg_class_stats['accuracy'] = class_stats
-        agg_class_stats['predictions'] = class_predictions
-        agg_class_stats['prediction_masks'] = class_masks  
-        agg_class_stats['predicted_labels'] = class_per_label_predictions       
-        # Save class_stats
-        agg_class_stats_out_path = os.path.join(metrics_dir, "agg_class_stats.pkl")
-        with open(agg_class_stats_out_path, 'wb') as o_file:
-            pickle.dump(agg_class_stats, o_file)
-    ###################################################################################################
 
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -993,6 +1137,44 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
+def get_sample_stats(val_loader, model, criterion, args):
+    top_1_acc, label_preds, prediction_mask, predicted_labels = validate_per_class(val_loader, model, criterion, args)
+    return top_1_acc, label_preds, prediction_mask, predicted_labels
+
+def get_sample_stats_classwise(df_val, val_loader, model, criterion, args):
+    class_stats_epoch = {}
+    class_predictions_epoch = {}
+    class_per_label_predictions_epoch = {}
+    class_masks_epoch = {}
+    unique_classes = df_val['label'].unique()
+    for uni_class in unique_classes:
+
+        df_class_val = df_val[df_val['label'] == uni_class]
+        df_class_val.iloc[0]['class']
+        # GO-GO-GO!
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225])
+
+        if args.arch == 'resnet50':
+            val_dataset = CustomImageDataset(df_class_val, transform=transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            # transforms.Resize(224),
+            transforms.ToTensor(),
+            normalize,
+        ]))        
+        val_sampler = None
+        val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+
+        top_1_acc, label_preds, prediction_mask, predicted_labels = validate_per_class(val_loader, model, criterion, args)
+        class_per_label_predictions_epoch[uni_class] = predicted_labels
+        class_stats_epoch[uni_class] = top_1_acc
+        class_predictions_epoch[uni_class] = label_preds
+        class_masks_epoch[uni_class] = prediction_mask
+
+    return class_stats_epoch, class_predictions_epoch, class_per_label_predictions_epoch, class_masks_epoch
 
 if __name__ == '__main__':
     main()

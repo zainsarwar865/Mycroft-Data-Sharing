@@ -2,11 +2,14 @@ dataset_root_paths = {
     "Imagenet":  "/bigstor/zsarwar/Imagenet/DF/",
     "Tsinghua": "/bigstor/zsarwar/Tsinghua/DF/",
     "OpenImages": "/bigstor/zsarwar/OpenImages/DF/",
-    "food101": "/bigstor/common_data/food_101/DF", 
+    "food101": "/projects/bdgs/zsarwar/data/food-101/DF", 
     "uecfood256": "/bigstor/common_data/UECFOOD256/DF/",
-    "upmcfood101": "/bigstor/common_data/UPMC-food-101/DF",
+    "upmcfood101": "/projects/bdgs/zsarwar/data/UPMC-food-101/DF",
     "ISIAFood101": "/bigstor/common_data/ISIA-Food-500/DF",
-    "DogsVsWolves": "/bigstor/zsarwar/Imagenet_2012_subsets/DF"
+    "DogsVsWolves": "/projects/bdgs/zsarwar/data/Imagenet_2012_subsets/DF"
+
+
+
 }
 dataset_configs = {
     "Imagenet": {'train': {"dogs": "df_imagenet_dogs_train.pkl", 
@@ -46,7 +49,7 @@ dataset_configs = {
                             "corrupted": "df_ISIA-Food-500_val.pkl",
                             "corrupted_labels": "df_ISIA-Food-500_val.pkl"}},
 
-    "DogsVsWolves": {"train" : {"full" : "df_train_MT_3_Imagenet_8_Non-Dog-wolf-animals.pkl",
+    "DogsVsWolves": {"train" : {"MT_3" : "df_train_MT_3_Imagenet_8_Non-Dog-wolf-animals.pkl",
                                 "DO_1" : "df_train_DO_1_Imagenet_48_no-wolf-dog-animals.pkl",
                                 "DO_2" : "df_train_DO_2_Imagenet_48_no-wolf-dog-animals.pkl",
                                 "DO_3" : "df_train_DO_3_Imagenet_48_no-wolf-dog-animals.pkl", 
@@ -56,7 +59,7 @@ dataset_configs = {
                                 "DO_1_corrupted" : "df_train_DO_1_Imagenet_48_no-wolf-dog-animals_corrupted.pkl",
                                 "DO_1_corrupted_labels" : "df_train_DO_1_Imagenet_48_no-wolf-dog-animals_corrupted_labels.pkl"                                
                                 },
-                     "val" :   {"full" : "df_val_MT_3_Imagenet_8_Non-Dog-wolf-animals.pkl",
+                     "val" :   {"MT_3" : "df_val_MT_3_Imagenet_8_Non-Dog-wolf-animals.pkl",
                                 "DO_1" : "df_val_DO_1_Imagenet_48_no-wolf-dog-animals.pkl",
                                 "DO_2" : "df_val_DO_1_Imagenet_48_no-wolf-dog-animals.pkl",
                                 "DO_2" : "df_val_DO_1_Imagenet_48_no-wolf-dog-animals.pkl",

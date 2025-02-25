@@ -43,15 +43,16 @@ original_dataset_path = configs.dataset_root_paths[args.original_dataset]
 # Val needs to be the val_test.pkl set if training MT    
 if args.trainer_type != "DO":    
     original_val_config = configs.dataset_configs[args.original_dataset]['val'][args.original_config]
-    original_val_config = original_val_config.replace(".pkl", "_test.pkl")
+    original_val_config = original_val_config.replace(".pkl", "_val.pkl")
     original_val_dataset_path = os.path.join(mt_root_directory, "Datasets")
     original_val_path = os.path.join(original_val_dataset_path, original_val_config)
+    print(original_val_path)
     df_val = pd.read_pickle(original_val_path)
 
 
-pred_masks = stats['prediction_masks']
-preds = stats['predictions']
-predicted_labels = stats['predicted_labels']
+pred_masks = stats['prediction_masks']['best']
+preds = stats['predictions']['best']
+predicted_labels = stats['predicted_labels']['best']
 uni_labels = df_val['label'].unique()
 df_dhard = None
 for lab in uni_labels:
@@ -69,13 +70,22 @@ for lab in uni_labels:
 
 
 # subsample bottom k classes
+"""
 bottom_k = args.bottom_k
 accs = list(stats['accuracy'].values())
 accs = np.asarray(accs)
 label_indices = np.argsort(accs)[0:bottom_k]
 bottom_k_labels = np.asarray(list(stats['accuracy'].keys()))[label_indices]
+"""
+if args.original_dataset == 'food101':
+        thrash_classes = ['French onion soup','Hot and sour soup','Pho','Takoyaki', 'Churros','Beignets', 'Lobster bisque', 'Sashimi', 'Clam chowder','Onion rings']
+elif args.original_dataset == 'Imagenet':
+    thrashed_classes = ['Welsh springer spaniel','Bedlington terrier','Pomeranian','pug, pug-dog','African hunting dog, hyena dog, Cape hunting dog, Lycaon pictus','Bernese mountain dog','Boston bull, Boston terrier','Leonberg','Samoyed, Samoyede','borzoi, Russian wolfhound']
+elif args.original_dataset == 'DogsVsWolves':
+    thrashed_classes = ['dogs', 'wolves']
 
-df_dhard_sub = df_dhard[df_dhard['label'].isin(bottom_k_labels)]
+df_dhard_sub = df_dhard[df_dhard['class'].isin(thrashed_classes)]
+
 
 
 # Create df_dhard_sub_aug by subsampling
@@ -100,6 +110,9 @@ for lab in dhard_labels:
         df_dhard_sub_aug = df_sampled
 
 # Save dhard_empirical + dhard_sub
+
+df_dhard_sub = df_dhard_sub[~df_dhard_sub.index.isin(df_dhard_sub_aug.index)]
+
 new_config = f"_empirical_{expr_hash}.pkl"
 dhard_config = original_val_config.replace(".pkl", new_config)
 dhard_path = os.path.join(original_val_dataset_path, dhard_config)

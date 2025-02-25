@@ -16,4 +16,5 @@ mt_root_directory = os.path.join(args.enola_base_dir, mt_config)
 
 bashname = args.bash_script_config.split("/")[-1]
 bash_copy_path = os.path.join(mt_root_directory, bashname)
+
 shutil.copyfile(args.bash_script_config, bash_copy_path)

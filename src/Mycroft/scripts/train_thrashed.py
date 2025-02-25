@@ -180,7 +180,6 @@ if args.trainer_type == "MT_Baseline":
     mt_hash_config = (hashlib.md5(args.mt_hash_config.encode('UTF-8'))).hexdigest()
     args.mt_hash_config = mt_hash_config
 
-    
 elif args.trainer_type == "MT_Augmented":
     expr_config = f"{args.mt_hash_config}_{args.do_hash_config}_{args.do_augmented_construct_hash_config}_{args.do_augmented_hash_config}"
     ### Convert strings to hashes
@@ -438,16 +437,11 @@ def main_worker(gpu, ngpus_per_node, args):
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing).to(device)
 
-    
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
     
-    """
-    optimizer = torch.optim.Adam(model.parameters(), args.lr,
-                            betas=(0.9, 0.999), eps=1e-08,
-                            weight_decay=args.weight_decay)
-    """
+
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     #scheduler = StepLR(optimizer, step_size=30, gamma=0.1) 
     main_scheduler = CosineAnnealingLR(
@@ -557,11 +551,8 @@ def main_worker(gpu, ngpus_per_node, args):
     random_seed=args.seed
     # Shuffle the datasets
     df_train = df_train.sample(frac=1, random_state=random_seed)
-    #df_val = df_val.sample(frac=1, random_state=random_seed)
     df_test = df_val
     df_thrash_val = df_val[df_val['class'].isin(thrash_classes)]
-
-
 
     if args.trainer_type == "MT_Augmented":
         # Load D_Hard
@@ -577,9 +568,6 @@ def main_worker(gpu, ngpus_per_node, args):
         dhard_config = val_config.replace(".pkl", new_config)
         dhard_path = os.path.join(datasets_dir, dhard_config)
         df_dhard_sub = pd.read_pickle(dhard_path)
-
-
-
 
     # GO-GO-GO!
     # These are imagenet normalizations
@@ -612,7 +600,6 @@ def main_worker(gpu, ngpus_per_node, args):
                 transforms.ToTensor(),
                 normalize,
             ]))
-
         thrash_val_dataset = CustomImageDataset(df_thrash_val, transform=transforms.Compose([
                 transforms.ToPILImage(),
                 transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
@@ -638,34 +625,6 @@ def main_worker(gpu, ngpus_per_node, args):
                     transforms.ToTensor(),
                     normalize,
                 ]))
-
-
-
-    elif args.arch == 'efficientnet_b3':    
-        train_dataset = CustomImageDataset(df_train, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
-        val_dataset = CustomImageDataset(df_val, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
-
-        test_dataset = CustomImageDataset(df_test, transform=transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.Resize(320, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(300),
-                transforms.ToTensor(),
-                normalize,
-            ]))
-
-
 
 
     if args.distributed:
@@ -813,11 +772,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
 
 
-
             scheduler.step()
             all_accs = list(class_stats_epoch.values())
             acc1 = sum(all_accs) / len(all_accs)
-
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
@@ -852,7 +809,7 @@ def main_worker(gpu, ngpus_per_node, args):
     #optimizer.load_state_dict(checkpoint['optimizer'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    
+
     validate(test_loader, model, criterion, args)
 
     ###################################################################################################

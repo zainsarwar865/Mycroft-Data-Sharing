@@ -600,15 +600,15 @@ def main_worker(gpu, ngpus_per_node, args):
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler, collate_fn=collate_fn)
+        num_workers=args.workers, pin_memory=False, sampler=train_sampler, collate_fn=collate_fn)
 
     val_loader = torch.utils.data.DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+        num_workers=args.workers, pin_memory=False, sampler=val_sampler)
 
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+        num_workers=args.workers, pin_memory=False, sampler=val_sampler)
 
     if args.evaluate:
         validate(val_loader, model, criterion, args)

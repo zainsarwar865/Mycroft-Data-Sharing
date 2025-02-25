@@ -2,8 +2,8 @@ import argparse
 import yaml
 import os
 import sys
-sys.path.append("/home/zsarwar/Projects/Data_Sharing/Private-Data-Sharing/src/GradMatch/cords")
-os.chdir("/home/zsarwar/Projects/Data_Sharing/Private-Data-Sharing/src/GradMatch/cords")
+sys.path.append("/projects/bdgs/zsarwar/Mycroft-Data-Sharing/src/GradMatch/cords")
+os.chdir("/projects/bdgs/zsarwar/Mycroft-Data-Sharing/src/GradMatch/cords")
 import time
 import numpy as np
 import hashlib
@@ -340,7 +340,7 @@ from dotmap import DotMap
 import torch.backends.cudnn as cudnn
 import random
 
-sys.path.append("/home/zsarwar/Projects/Data_Sharing/Private-Data-Sharing/src/Enola/scripts")
+sys.path.append("/projects/bdgs/zsarwar/Mycroft-Data-Sharing/src/Mycroft/scripts")
 from utils import configs
 
 if args.seed is not None:
@@ -432,7 +432,7 @@ if args.per_class:
         # Creating the per class df_val    
         df_val_class = df_val[df_val['class'] == unique_class]
         df_train_class = df_train[df_train['class'] == unique_class]
-        data_budget_per_class = args.num_candidates * len(df_val_class)
+        data_budget_per_class = args.num_candidates #* len(df_val_class)
         data_budget_per_class = min(data_budget_per_class, len(df_train_class))
 
         logger.info(f"data_budget_per_class : {data_budget_per_class}")
