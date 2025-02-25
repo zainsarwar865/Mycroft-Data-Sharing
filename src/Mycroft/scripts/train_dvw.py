@@ -501,7 +501,8 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         df_train = df_original_train
     
-    df_val = df_original_val
+    #df_val = df_original_val
+    df_val = df_original_test
     random_seed=args.seed
     # Shuffle the datasets
     df_train = df_train.sample(frac=1, random_state=random_seed)
