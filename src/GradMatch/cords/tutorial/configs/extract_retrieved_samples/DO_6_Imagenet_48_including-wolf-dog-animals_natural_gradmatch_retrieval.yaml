@@ -1,9 +1,0 @@
-per_class_gradmatch: False
-df_root: "/bigstor/zsarwar/Imagenet_2012_subsets/MT_DO_Splits/"
-df_retrieve_config: "df_train_DO_6_Imagenet_48_including-wolf-dog-animals_natural.pkl"
-gradmatch_retrieved_path: "/bigstor/zsarwar/GradMatch"
-gradmatch_retrieved_config: "DO_6_Imagenet_48_including-wolf-dog-animals_natural_gradmatch_budget-100_perclass-False_0b32efd5b7fc0906b38f81b5753c9f9c"
-gradmatch_retrieved_out_path: "/bigstor/zsarwar/GradMatch/GradMatch_Retrievals/"
-tot_samples_per_class_needed: 20
-extra_classes_possible: False
-checkpoint_idx: 1

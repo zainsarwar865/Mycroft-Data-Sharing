@@ -1,8 +1,0 @@
-plot_dir: "/bigstor/zsarwar/GradMatch/Plots/ckpt_ratios"
-plot_dir_metrics: "/bigstor/zsarwar/GradMatch/Plots/ckpt_metrics"
-df_root: "/bigstor/zsarwar/Imagenet_2012_subsets/MT_DO_Splits/"
-df_retrieve_config: "df_train_DO_6_Imagenet_48_including-wolf-dog-animals_natural.pkl"
-gradmatch_omp_root: "/bigstor/zsarwar/GradMatch"
-gradmatch_omp_config: DO_6_Imagenet_48_including-wolf-dog-animals_natural_gradmatch_budget-100_perclass-False_0b32efd5b7fc0906b38f81b5753c9f9c
-per_class: False
-DO_type: "DO-6"

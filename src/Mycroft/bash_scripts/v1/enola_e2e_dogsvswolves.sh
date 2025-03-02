@@ -1,8 +1,8 @@
-# Five main components of the Enola Simulator
+# Five main components of the Mycroft Simulator
 CREATE_ROOT=false
 CONSTRUCT_TEST_VAL_SPLIT=false
 TRAIN_MT_BASELINE=true
-CONSTRUCT_DHARD=true
+CONSTRUCT_DHARD=false
 TRAIN_DO=false
 RUN_ENOLA=false
 CONSTRUCT_D_USEFUL=false
@@ -14,7 +14,7 @@ BashName=${0##*/}
 #x=FileName
 # main directory here
 BashPath="$PWD"/$BashName
-home_dir=/home/zsarwar/Projects/Data_Sharing/Private-Data-Sharing/src
+home_dir=/u/npatil/Code_Clean/Mycroft-Data-Sharing/src
 
 # Generic params
 
@@ -26,16 +26,16 @@ seed=60
 #####################################################################   ########################
 
 # MT Root parameters
-enola_base_dir='/bigstor/zsarwar/Enola_Augmented/'
+enola_base_dir='/work/hdd/bdgs/npatil/test/dogsvwolves'
 mt_dataset="DogsVsWolves"
-mt_config="MT_2"
+mt_config="MT_3"
 mt_classes=2
 # root_config --> subset
 # Hash configs
 root_hash_config="MT_${mt_dataset}_${mt_config}_${mt_classes}"
 if [ "$CREATE_ROOT" = true ]
 then
-    cd ${home_dir}/Enola/scripts/utils
+    cd ${home_dir}/Mycroft/scripts/utils
     python3 create_directories.py \
     --enola_base_dir=$enola_base_dir \
     --root_hash_config=$root_hash_config \
@@ -48,7 +48,7 @@ fi
 
 #############################################################################################
 # Copy bash script to root dir
-cd ${home_dir}/Enola/scripts/utils
+cd ${home_dir}/Mycroft/scripts/utils
     python3 copy_bash.py \
     --enola_base_dir=$enola_base_dir \
     --root_hash_config=$root_hash_config \
@@ -64,7 +64,7 @@ cd ${home_dir}/Enola/scripts/utils
 split_ratio=1
 if [ "$CONSTRUCT_TEST_VAL_SPLIT" = true ]
 then 
-    cd ${home_dir}/Enola/scripts/utils
+    cd ${home_dir}/Mycroft/scripts/utils
     python3 create_test_val_split.py \
     --enola_base_dir=$enola_base_dir \
     --root_hash_config=$root_hash_config \
@@ -111,7 +111,7 @@ mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_
 mt_hash_ft_resume_config="${mt_hash_config}"
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
-    cd ${home_dir}/Enola/scripts
+    cd ${home_dir}/Mycroft/scripts
     python3 train_dvw.py \
     --gpu=$gpu \
     --enola_base_dir=$enola_base_dir \
@@ -153,7 +153,7 @@ fi
 bottom_k=2
 if [ "$CONSTRUCT_DHARD" = true ]
 then 
-    cd ${home_dir}/Enola/scripts/utils
+    cd ${home_dir}/Mycroft/scripts/utils
     python3 create_dhard.py \
     --enola_base_dir=$enola_base_dir \
     --root_hash_config=$root_hash_config \
@@ -203,7 +203,7 @@ do_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_
 
 if [ "$TRAIN_DO" = true ]
 then
-    cd ${home_dir}/Enola/scripts
+    cd ${home_dir}/Mycroft/scripts
     python3 train.py \
     --gpu=$gpu \
     --enola_base_dir=$enola_base_dir \
@@ -273,7 +273,7 @@ numclasses=101
 model='resnet50'
 lam2=2
 
-# Enola hash configs
+# Mycroft hash configs
 unicom_hash_config="Unicom_DO-dataset-${original_dataset}_DO-config-${original_config}_MT-dataset-${mt_dataset}-MT-config-${mt_config}-top-k-${top_k}_seed-${seed}"
 gradmatch_hash_config="GradMatch_DO-dataset-${original_dataset}_DO-config-${original_config}_MT-dataset-${mt_dataset}-MT-config-${mt_config}_model-${arch}_joint_optimization-False_numclasses-${numclasses}_select-subset-every-${select_subset_every}_num-candidates-${num_candidates}_train-batch-size-${trn_batch_size}_model-eval-batch-size-${model_eval_batch_size}_start-${start}_end-${end}_jump-ckpts-${jump_ckpts}_per-class-${per_class}_seed-${seed}"
 construct_random_config="Random_DO-dataset-${original_dataset}_DO-config-${original_config}_MT-dataset-${mt_dataset}_MT-config-${mt_config}_d-hard-budget-${d_hard_budget}"
@@ -332,7 +332,7 @@ then
     if [ "$RUN_RANDOM" = true ]
     then
         # Random should randomly select n samples from each class and share it
-        cd ${home_dir}/Enola/scripts/utils
+        cd ${home_dir}/Mycroft/scripts/utils
         python3 construct_retrieved_random.py \
         --enola_base_dir=$enola_base_dir \
         --root_hash_config=$root_hash_config \
@@ -350,7 +350,7 @@ then
 
     if [ "$RUN_FULL" = true ]
     then
-        cd ${home_dir}/Enola/scripts/utils
+        cd ${home_dir}/Mycroft/scripts/utils
         python3 construct_retrieved_full.py \
         --enola_base_dir=$enola_base_dir \
         --root_hash_config=$root_hash_config \
@@ -444,7 +444,7 @@ if [ "$CONSTRUCT_D_USEFUL" = true ]
 then
     if [ "$CONSTRUCT_UNICOM" = true ]
     then
-        cd ${home_dir}/Enola/scripts/utils
+        cd ${home_dir}/Mycroft/scripts/utils
         python3 construct_retrieved_unicom.py \
         --enola_base_dir=$enola_base_dir \
         --root_hash_config=$root_hash_config \
@@ -466,7 +466,7 @@ then
 
     if [ "$CONSTRUCT_GRADMATCH" = true ]
     then
-        cd ${home_dir}/Enola/scripts/utils
+        cd ${home_dir}/Mycroft/scripts/utils
         python3 construct_retrieved_gradmatch.py \
         --enola_base_dir=$enola_base_dir \
         --root_hash_config=$root_hash_config \
@@ -485,7 +485,7 @@ then
 
     if [ "$CONSTRUCT_JOINT_OPTIM" = true ]
         then
-            cd ${home_dir}/Enola/scripts/utils
+            cd ${home_dir}/Mycroft/scripts/utils
             python3 construct_retrieved_joint_optimization.py \
             --enola_base_dir=$enola_base_dir \
             --root_hash_config=$root_hash_config \
@@ -551,7 +551,7 @@ if [ "$TRAIN_MT_AUGMENTED" = true ]
 then
     if [ "$TRAIN_AUGMENTED_UNICOM" = true ]
     then
-        cd ${home_dir}/Enola/scripts
+        cd ${home_dir}/Mycroft/scripts
         python3 train.py \
         --gpu=$gpu \
         --enola_base_dir=$enola_base_dir \
@@ -593,7 +593,7 @@ then
 
     if [ "$TRAIN_AUGMENTED_GRADMATCH" = true ]
     then
-        cd ${home_dir}/Enola/scripts
+        cd ${home_dir}/Mycroft/scripts
         python3 train.py \
         --gpu=$gpu \
         --enola_base_dir=$enola_base_dir \
@@ -635,7 +635,7 @@ then
 
     if [ "$TRAIN_AUGMENTED_RANDOM" = true ]
     then
-        cd ${home_dir}/Enola/scripts
+        cd ${home_dir}/Mycroft/scripts
         python3 train.py \
         --gpu=$gpu \
         --enola_base_dir=$enola_base_dir \
@@ -677,7 +677,7 @@ then
 
     if [ "$TRAIN_AUGMENTED_FULL" = true ]
     then
-        cd ${home_dir}/Enola/scripts
+        cd ${home_dir}/Mycroft/scripts
         python3 train.py \
         --gpu=$gpu \
         --enola_base_dir=$enola_base_dir \
@@ -719,7 +719,7 @@ then
 
     if [ "$TRAIN_AUGMENTED_JOINT_OPTIM" = true ]
     then
-        cd ${home_dir}/Enola/scripts
+        cd ${home_dir}/Mycroft/scripts
         python3 train.py \
         --gpu=$gpu \
         --enola_base_dir=$enola_base_dir \
