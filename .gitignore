@@ -173,3 +173,7 @@ paper.pdf
 icml23.pdf
 iclr_2023.pdf
 neurips_2023.pdf
+
+#ignoring logs folder
+/logs/
+/newlogs/

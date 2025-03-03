@@ -73,7 +73,8 @@ datasets_folder = "Datasets"
 datasets_dir = os.path.join(mt_root_directory, datasets_folder)
 val_config = configs.dataset_configs[args.MT_dataset]['val'][args.MT_config]
 #val_config = val_config.replace(".pkl", "_val.pkl")
-new_config = f"_test_sub_empirical_{mt_hash_config}.pkl"
+#new_config = f"_test_sub_empirical_{mt_hash_config}.pkl"
+new_config = f"_val_sub_empirical_{mt_hash_config}.pkl"
 dhard_config = val_config.replace(".pkl", new_config)
 
 dhard_path = os.path.join(datasets_dir, dhard_config)

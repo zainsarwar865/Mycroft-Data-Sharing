@@ -1,12 +1,12 @@
 # Five main components of the Enola Simulator
 CREATE_ROOT=false
 CONSTRUCT_TEST_VAL_SPLIT=false
-TRAIN_MT_BASELINE=true
+TRAIN_MT_BASELINE=false
 CONSTRUCT_DHARD=false
 TRAIN_DO=false
 RUN_ENOLA=false
 CONSTRUCT_D_USEFUL=false
-TRAIN_MT_AUGMENTED=false
+TRAIN_MT_AUGMENTED=true
 
 #echo $y
 BashName=${0##*/}

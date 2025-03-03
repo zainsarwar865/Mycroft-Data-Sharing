@@ -516,11 +516,13 @@ def main_worker(gpu, ngpus_per_node, args):
         datasets_folder = "Datasets"
         datasets_dir = os.path.join(mt_root_directory, datasets_folder)
         val_config = configs.dataset_configs[args.original_dataset]['val'][args.original_config]
-        new_config = f"_test_empirical_{mt_baseline_resume_hash_config}.pkl"
+        #new_config = f"_test_empirical_{mt_baseline_resume_hash_config}.pkl"
+        new_config = f"_val_empirical_{mt_baseline_resume_hash_config}.pkl"
         dhard_config = val_config.replace(".pkl", new_config)
         dhard_path = os.path.join(datasets_dir, dhard_config)
         df_dhard = pd.read_pickle(dhard_path)
-        new_config = f"_test_sub_empirical_{mt_baseline_resume_hash_config}.pkl"
+        #new_config = f"_test_sub_empirical_{mt_baseline_resume_hash_config}.pkl"
+        new_config = f"_val_sub_empirical_{mt_baseline_resume_hash_config}.pkl"
         dhard_config = val_config.replace(".pkl", new_config)
         dhard_path = os.path.join(datasets_dir, dhard_config)
         df_dhard_sub = pd.read_pickle(dhard_path)
